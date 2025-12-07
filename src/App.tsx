@@ -496,15 +496,20 @@ const App: React.FC = () => {
             <div className={`fixed inset-0 z-[10000] bg-[#031811] flex flex-col transition-transform duration-300 ${showHistoryMobile ? 'translate-y-0' : 'translate-y-full lg:translate-y-0 lg:static lg:w-80 lg:shrink-0 lg:block lg:bg-transparent'}`}>
                <div className="flex lg:hidden justify-between items-center p-4 border-b border-white/10 bg-[#062c1f] relative">
                    <h2 className="text-xl font-bold flex items-center gap-2"><HistoryIcon/> 對戰紀錄</h2>
+                   {/* (原本這裡的按鈕移除了) */}
+               </div>
+               <div className="flex-1 overflow-hidden p-4 lg:p-0 pb-24">
+                  <HistoryPanel history={history} onClear={() => updateData({ history: [] })} />
+               </div>
+
+               {/* 👇 新增：按鈕移到正下方，浮在畫面上，類似 IG 限動關閉 */}
+               <div className="lg:hidden absolute bottom-10 left-1/2 -translate-x-1/2 z-[10001]">
                    <button 
                      onClick={() => setShowHistoryMobile(false)} 
-                     className="fixed top-4 right-4 p-3 bg-gray-700 hover:bg-gray-600 rounded-full text-white shadow-xl z-[10001] border border-white/20 active:scale-95"
+                     className="p-4 bg-white text-black rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform border-4 border-[#031811]"
                    >
-                       <X size={28}/>
+                       <X size={32} strokeWidth={3}/>
                    </button>
-               </div>
-               <div className="flex-1 overflow-hidden p-4 lg:p-0">
-                  <HistoryPanel history={history} onClear={() => updateData({ history: [] })} />
                </div>
             </div>
           </div>
