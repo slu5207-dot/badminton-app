@@ -48,6 +48,7 @@ const SignupSystem: React.FC<Props> = ({ onImportToGame }) => {
   
   const [editingParticipant, setEditingParticipant] = useState<{name: string, level: PlayerLevel, bp: number} | null>(null);
 
+  // 1. Firebase Init
   useEffect(() => {
     const docRef = doc(db, 'badminton-app', 'signup-data');
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -77,17 +78,14 @@ const SignupSystem: React.FC<Props> = ({ onImportToGame }) => {
   };
 
   useEffect(() => {
-    const docRef = doc(db, 'badminton-app', 'favorites-data');
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setFavorites(data.list || []);
-      } else {
-        setDoc(docRef, { list: [] });
-      }
-    });
-    return () => unsubscribe();
+    const saved = localStorage.getItem('badminton_favorites');
+    if (saved) setFavorites(JSON.parse(saved));
   }, []);
+
+  const saveFavorites = (favs: FavoritePlayer[]) => {
+    setFavorites(favs);
+    localStorage.setItem('badminton_favorites', JSON.stringify(favs));
+  };
 
   const saveFavoritesToFirebase = async (newFavs: FavoritePlayer[]) => {
     setFavorites(newFavs);
@@ -244,6 +242,15 @@ const SignupSystem: React.FC<Props> = ({ onImportToGame }) => {
       updateEvent(evt);
   };
 
+  const toggleFavorite = (name: string, level: PlayerLevel, battlePower: number) => {
+      const isFav = favorites.some(f => f.name === name);
+      if (isFav) {
+          saveFavoritesToFirebase(favorites.filter(f => f.name !== name));
+      } else {
+          saveFavoritesToFirebase([...favorites, { name, level, battlePower }]);
+      }
+  };
+
   const generatePreviewText = () => {
       const evt = currentEvent;
       const totalFee = (evt.venueFee || 0) + (evt.shuttlecockFee || 0);
@@ -258,54 +265,29 @@ const SignupSystem: React.FC<Props> = ({ onImportToGame }) => {
   const totalFee = (currentEvent.venueFee || 0) + (currentEvent.shuttlecockFee || 0);
   const perPerson = currentEvent.participants.length > 0 ? Math.round(totalFee / currentEvent.participants.length) : 0;
 
-  // 切換星星
-  const toggleFavorite = (name: string, level: PlayerLevel, battlePower: number) => {
-      const isFav = favorites.some(f => f.name === name);
-      if (isFav) {
-          saveFavoritesToFirebase(favorites.filter(f => f.name !== name));
-      } else {
-          saveFavoritesToFirebase([...favorites, { name, level, battlePower }]);
-      }
-  };
-
   return (
     <div className="flex flex-col h-full bg-[#031811] text-white relative pb-20">
-       {/* 📅 Date Picker */}
        <div className="bg-[#062c1f] p-4 border-b border-white/10 flex justify-between items-center sticky top-0 z-20">
           <div className="flex items-center gap-4 relative">
               <button onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate()-1); setCurrentDate(d.toISOString().split('T')[0]); }} className="p-1 hover:bg-white/10 rounded"><ChevronLeft/></button>
-              
               <div className="relative group">
-                  <div className="flex items-center gap-2 font-bold text-lg text-emerald-400 cursor-pointer px-2 py-1 hover:bg-black/20 rounded">
-                      <Calendar size={18}/> 
-                      {currentDate}
-                  </div>
-                  <input 
-                    type="date" 
-                    value={currentDate} 
-                    onChange={(e) => setCurrentDate(e.target.value)} 
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  />
+                  <div className="flex items-center gap-2 font-bold text-lg text-emerald-400 cursor-pointer px-2 py-1 hover:bg-black/20 rounded"><Calendar size={18}/> {currentDate}</div>
+                  <input type="date" value={currentDate} onChange={(e) => setCurrentDate(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"/>
               </div>
-
               <button onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate()+1); setCurrentDate(d.toISOString().split('T')[0]); }} className="p-1 hover:bg-white/10 rounded"><ChevronRight/></button>
           </div>
           {isSyncing && <RefreshCw size={16} className="animate-spin text-gray-400" />}
        </div>
 
        <div className="flex p-2 gap-2 bg-[#062c1f]">
-         {['edit', 'preview', 'favorites'].map(t => (
-             <button key={t} onClick={() => setActiveTab(t as any)} className={`flex-1 py-2 rounded text-sm font-bold capitalize ${activeTab === t ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-white/5'}`}>{t === 'edit' ? '編輯' : t === 'preview' ? '預覽' : '常用'}</button>
-         ))}
+         {['edit', 'preview', 'favorites'].map(t => (<button key={t} onClick={() => setActiveTab(t as any)} className={`flex-1 py-2 rounded text-sm font-bold capitalize ${activeTab === t ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-white/5'}`}>{t === 'edit' ? '編輯' : t === 'preview' ? '預覽' : '常用'}</button>))}
        </div>
 
        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-          
           {activeTab === 'edit' && (
               <>
                  <div className="bg-[#0a2e1f] p-4 rounded-xl border border-white/10 space-y-4">
                     <input value={currentEvent.title} onChange={e => updateEvent({...currentEvent, title: e.target.value})} className="w-full bg-transparent text-xl font-bold text-center border-b border-white/10 pb-1 outline-none focus:border-emerald-500 transition-colors"/>
-                    
                     <div className="grid grid-cols-2 gap-4">
                        <div>
                            <div className="flex justify-between items-center mb-1"><label className="text-xs text-gray-400 flex items-center gap-1"><MapPin size={12}/> 地點</label><button onClick={() => setIsAddingLocation(!isAddingLocation)} className="text-[10px] text-emerald-400 hover:underline flex items-center">{isAddingLocation ? '取消' : '+新增'}</button></div>
@@ -359,18 +341,19 @@ const SignupSystem: React.FC<Props> = ({ onImportToGame }) => {
                         })}
                     </div>
                  </div>
-                 {/* Waitlist (保持原樣，略) */}
+                 {/* Waitlist */}
+                 {currentEvent.waitlist.length > 0 && <div className="bg-[#0a2e1f] rounded-xl border border-white/10 overflow-hidden"><div className="bg-orange-900/30 px-4 py-2 border-b border-white/10"><span className="font-bold text-orange-400">候補</span></div>{currentEvent.waitlist.map((name, i) => { const details = currentEvent.participantDetails?.[name]; return (<div key={i} className="flex justify-between items-center p-3 hover:bg-white/5 border-b border-white/5"><div className="flex items-center gap-3"><span className="font-mono text-orange-600 w-6">{i+1}</span><span>{name}</span>{details && <span className="text-[10px] text-gray-500">BP:{details.battlePower}</span>}</div><div className="flex gap-1">{details && (<button onClick={() => setEditingParticipant({ name, level: details.level, bp: details.battlePower })} className="p-2 text-gray-500 hover:text-white"><Pencil size={14}/></button>)}<button onClick={() => handleRemove(i, true)} className="p-2 text-gray-500 hover:text-red-400"><Trash2 size={16}/></button></div></div>) })}</div>}
               </>
           )}
 
-          {activeTab === 'preview' && (/* 略 */ <div className="h-full flex flex-col"><div className="bg-white/10 p-4 rounded-xl font-mono text-sm whitespace-pre-wrap flex-1 overflow-y-auto border border-white/10 mb-4 select-all">{generatePreviewText()}</div><button onClick={() => navigator.clipboard.writeText(generatePreviewText())} className="w-full py-4 bg-emerald-600 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2"><Copy size={18} /> 複製</button></div>)}
+          {activeTab === 'preview' && (/* ... */ <div className="h-full flex flex-col"><div className="bg-white/10 p-4 rounded-xl font-mono text-sm whitespace-pre-wrap flex-1 overflow-y-auto border border-white/10 mb-4 select-all">{generatePreviewText()}</div><button onClick={() => navigator.clipboard.writeText(generatePreviewText())} className="w-full py-4 bg-emerald-600 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2"><Copy size={18} /> 複製</button></div>)}
           {activeTab === 'favorites' && (<div className="bg-[#0a2e1f] rounded-xl border border-white/10 overflow-hidden p-4 grid gap-2">{favorites.map(fav => (<div key={fav.name} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5"><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${LEVEL_COLORS[fav.level] || LEVEL_COLORS[PlayerLevel.INTERMEDIATE]} text-white`}>{fav.name.slice(0,1)}</div><div><div className="text-gray-200 font-bold">{fav.name}</div><div className="text-[10px] text-gray-500">BP: {fav.battlePower}</div></div></div><div className="flex gap-1"><button onClick={() => setEditingFavorite(fav)} className="p-1.5 text-blue-400 hover:bg-white/10 rounded"><Pencil size={14}/></button><button onClick={() => handleAddFromFavorite(fav.name, fav.level, fav.battlePower)} className="p-1.5 bg-emerald-600 rounded text-white text-xs flex items-center gap-1"><Plus size={12}/> 填入</button><button onClick={() => saveFavoritesToFirebase(favorites.filter(f => f.name !== fav.name))} className="p-1.5 bg-red-600/20 text-red-400 rounded hover:bg-red-600/50"><Trash2 size={14}/></button></div></div>))}</div>)}
        </div>
 
-       {/* 🔥 [修復] 報名名單編輯視窗：完全複製常用名單的樣式，置中 + 不跑版 */}
+       {/* 🔥 [修復] 報名名單編輯彈窗：完全照抄常用名單的 Flex 置中寫法 + z-index [10000] */}
        {editingParticipant && (
            <div className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4">
-               <div className="bg-[#062c1f] w-[90%] max-w-sm rounded-2xl border border-emerald-500/50 p-6 shadow-2xl animate-fade-in-up relative">
+               <div className="bg-[#062c1f] w-full max-w-sm rounded-2xl border border-emerald-500/50 p-6 shadow-2xl relative">
                    <div className="flex justify-between items-center mb-6">
                        <h3 className="font-bold text-lg text-emerald-100">編輯報名資料</h3>
                        <button onClick={() => setEditingParticipant(null)}><X size={20}/></button>
@@ -402,8 +385,8 @@ const SignupSystem: React.FC<Props> = ({ onImportToGame }) => {
            </div>
        )}
 
-       {/* 常用名單編輯視窗 (保持原樣，因為它是好的) */}
-       {editingFavorite && ( <div className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4"> <div className="bg-[#062c1f] w-[90%] max-w-sm rounded-2xl border border-emerald-500/50 p-6 shadow-2xl relative"> <div className="flex justify-between items-center mb-6"> <h3 className="font-bold text-lg text-emerald-100">編輯常用選手</h3> <button onClick={() => setEditingFavorite(null)}><X size={20}/></button> </div> <div className="space-y-4"> <div className="text-center text-2xl font-bold mb-4">{editingFavorite.name}</div> <div> <label className="text-xs text-gray-400 block mb-1">等級</label> <select value={editingFavorite.level} onChange={(e) => setEditingFavorite({...editingFavorite, level: e.target.value as PlayerLevel})} className="w-full bg-black/40 border border-white/20 rounded p-2 text-white"> {Object.values(PlayerLevel).map(l => <option key={l} value={l}>{l}</option>)} </select> </div> <div> <label className="text-xs text-gray-400 block mb-1">戰鬥力 (BP)</label> <input type="number" value={editingFavorite.battlePower} onChange={(e) => setEditingFavorite({...editingFavorite, battlePower: parseInt(e.target.value) || 0})} className="w-full bg-black/40 border border-white/20 rounded p-2 text-white" /> </div> <button onClick={() => updateFavorite(editingFavorite, editingFavorite.name)} className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold mt-4"> 儲存變更 </button> </div> </div> </div> )}
+       {/* 常用名單編輯 Modal (保持不變) */}
+       {editingFavorite && ( <div className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4"> <div className="bg-[#062c1f] w-full max-w-sm rounded-2xl border border-emerald-500/50 p-6 shadow-2xl relative"> <div className="flex justify-between items-center mb-6"> <h3 className="font-bold text-lg text-emerald-100">編輯常用選手</h3> <button onClick={() => setEditingFavorite(null)}><X size={20}/></button> </div> <div className="space-y-4"> <div className="text-center text-2xl font-bold mb-4">{editingFavorite.name}</div> <div> <label className="text-xs text-gray-400 block mb-1">等級</label> <select value={editingFavorite.level} onChange={(e) => setEditingFavorite({...editingFavorite, level: e.target.value as PlayerLevel})} className="w-full bg-black/40 border border-white/20 rounded p-2 text-white"> {Object.values(PlayerLevel).map(l => <option key={l} value={l}>{l}</option>)} </select> </div> <div> <label className="text-xs text-gray-400 block mb-1">戰鬥力 (BP)</label> <input type="number" value={editingFavorite.battlePower} onChange={(e) => setEditingFavorite({...editingFavorite, battlePower: parseInt(e.target.value) || 0})} className="w-full bg-black/40 border border-white/20 rounded p-2 text-white" /> </div> <button onClick={() => updateFavorite(editingFavorite, editingFavorite.name)} className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold mt-4"> 儲存變更 </button> </div> </div> </div> )}
     </div>
   );
 };
