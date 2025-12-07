@@ -350,7 +350,7 @@ const App: React.FC = () => {
       {toastMessage && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[200] animate-fade-in-up"><div className="bg-emerald-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 border border-emerald-400/50"><CheckCircle size={18} />{toastMessage}</div></div>}
       <header className="bg-[#062c1f] border-b border-white/10 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-2 md:px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2"><Trophy className="text-yellow-400" size={24} /><h1 className="text-xl font-bold tracking-wide flex items-center gap-2">野豬騎士<span className="text-emerald-500 text-sm font-normal bg-emerald-900/50 px-2 py-0.5 rounded hidden sm:inline-block">V8.8 Mobile Fix</span></h1></div>
+          <div className="flex items-center gap-2"><Trophy className="text-yellow-400" size={24} /><h1 className="text-xl font-bold tracking-wide flex items-center gap-2">野豬騎士<span className="text-emerald-500 text-sm font-normal bg-emerald-900/50 px-2 py-0.5 rounded hidden sm:inline-block">V8.9 Mobile Fix</span></h1></div>
           <div className="flex items-center gap-2">
             <div className="hidden md:flex items-center gap-1 px-3 py-1 rounded-full bg-black/20 border border-white/5 mr-2">{isSyncing ? <><div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div><span className="text-xs text-gray-400">連線中...</span></> : <><div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div><span className="text-xs text-emerald-400 font-bold">已同步</span></>}</div>
             <div className="flex items-center gap-1 bg-black/20 p-1 rounded-lg">
