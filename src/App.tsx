@@ -25,11 +25,7 @@ const sanitize = (obj: any): any => {
   if (obj === null) return null;
   if (obj === undefined) return null;
   if (typeof obj === 'number' && isNaN(obj)) return 0;
-  
-  if (Array.isArray(obj)) {
-    return obj.map(sanitize);
-  }
-  
+  if (Array.isArray(obj)) return obj.map(sanitize);
   if (typeof obj === 'object') {
     const newObj: any = {};
     Object.keys(obj).forEach(key => {
@@ -93,13 +89,11 @@ const App: React.FC = () => {
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as GameData;
-        
         let fetchedPlayers = data.players || [];
         fetchedPlayers = fetchedPlayers.map(p => ({
             ...p,
             level: normalizeLevel(p.level as string)
         }));
-        
         setPlayers(fetchedPlayers);
         setCourts(data.courts || []);
         setHistory(data.history || []);
@@ -145,42 +139,39 @@ const App: React.FC = () => {
     setNewName('');
   };
 
+  // 🔥 [修正 2] 匯入時清空場地，所有人回到 waiting
   const handleImportFromSignup = (signupNames: string[], details?: Record<string, ParticipantDetail>) => {
-      const currentPlayers = playersRef.current;
       const newPlayersList: Player[] = [];
       const processedNames = new Set<string>();
       
-      currentPlayers.forEach(p => {
-          if (signupNames.includes(p.name)) {
-              const detail = details?.[p.name];
-              newPlayersList.push({ 
-                ...p, 
-                level: detail ? normalizeLevel(detail.level) : normalizeLevel(p.level as string),
-                battlePower: detail?.battlePower || p.battlePower, 
-                status: (p.status === 'fixed' || p.status === 'playing') ? p.status : 'waiting' as const
-              });
-              processedNames.add(p.name);
-          } else {
-              if (p.status === 'fixed' || p.status === 'playing') newPlayersList.push(p);
-          }
-      });
-      
+      // 這次我們不保留 currentPlayers 的狀態，全部重置
+      // 只要名字在 signupNames 裡，就重新建立
       signupNames.forEach(name => {
-          if (!processedNames.has(name)) {
-              const detail = details?.[name];
-              newPlayersList.push({ 
-                id: Date.now() + Math.random().toString(36).substr(2, 9), 
-                name: name, 
-                level: detail ? normalizeLevel(detail.level) : '中階', 
-                battlePower: detail?.battlePower || 1500, 
-                playCount: 0, 
-                status: 'waiting' as const
-              });
-          }
+          const detail = details?.[name];
+          newPlayersList.push({ 
+            id: Date.now() + Math.random().toString(36).substr(2, 9), 
+            name: name, 
+            level: detail ? normalizeLevel(detail.level) : '中階', 
+            battlePower: detail?.battlePower || 1500, 
+            playCount: 0, 
+            status: 'waiting' as const // 全部重置為 waiting
+          });
+          processedNames.add(name);
       });
       
-      updateData({ players: newPlayersList });
-      showToast(`匯入成功，已更新 ${newPlayersList.length} 筆資料`);
+      // 重置場地為全空
+      const resetCourts = INITIAL_COURTS.map((c, i) => ({
+          ...c, 
+          id: i + 1,
+          name: `場地 ${i + 1}`,
+          players: [null, null, null, null], 
+          nextMatch: [null, null, null, null], 
+          status: 'empty' as const,
+          startTime: undefined
+      }));
+      
+      updateData({ players: newPlayersList, courts: resetCourts });
+      showToast(`匯入並重置完成，共 ${newPlayersList.length} 人`);
       setActiveTab('manage');
   };
 
@@ -230,20 +221,48 @@ const App: React.FC = () => {
     setSelectedPlayerId(prev => prev === player.id ? null : player.id);
   };
 
+  // 🔥 [修正 1] 允許同一個人預排多次
   const assignPlayerToCourt = (courtId: number, playerId: string, slotIndex: number, isNextMatch: boolean) => {
     const player = playersRef.current.find(p => p.id === playerId);
     if (!player) return;
+    
     let updatedPlayers = [...playersRef.current];
-    const updatedCourts = courtsRef.current.map(c => {
+    let updatedCourts = [...courtsRef.current]; // 使用副本
+
+    // 如果是派往「主場地 (Main Court)」，我們才需要清理他在其他地方的分身
+    // 如果是「預排 (Next Match)」，我們允許重複，不清理
+    if (!isNextMatch) {
+        updatedCourts = updatedCourts.map(c => ({
+            ...c,
+            players: c.players.map(p => p?.id === playerId ? null : p),
+            // 注意：這裡我也不清空預排，因為他可能想打完這場接著打下一場
+            // 如果你想連預排都清空，可以把下面這行解開
+            // nextMatch: c.nextMatch.map(p => p?.id === playerId ? null : p) 
+        }));
+    }
+
+    updatedCourts = updatedCourts.map(c => {
       if (c.id !== courtId) return c;
       if (isNextMatch) {
-          const newNext = [...c.nextMatch]; newNext[slotIndex] = { ...player, queueTime: Date.now() }; return { ...c, nextMatch: newNext };
+          const newNext = [...c.nextMatch];
+          newNext[slotIndex] = { ...player, queueTime: Date.now() }; 
+          return { ...c, nextMatch: newNext };
       } else {
-          const newPlayers = [...c.players]; newPlayers[slotIndex] = { ...player, status: 'playing' };
-          return { ...c, players: newPlayers, status: newPlayers.every(p => p !== null) ? 'ready' : (c.status==='empty'?'ready':c.status), startTime: c.startTime } as Court;
+          const newPlayers = [...c.players];
+          newPlayers[slotIndex] = { ...player, status: 'playing' };
+          return { 
+            ...c, 
+            players: newPlayers, 
+            status: newPlayers.every(p => p !== null) ? 'ready' : (c.status==='empty'?'ready':c.status), 
+            startTime: c.startTime 
+          } as Court;
       }
     });
-    if (!isNextMatch) updatedPlayers = updatedPlayers.map(p => p.id === playerId ? { ...p, status: 'playing' as const } : p);
+    
+    if (!isNextMatch) {
+        updatedPlayers = updatedPlayers.map(p => p.id === playerId ? { ...p, status: 'playing' as const } : p);
+    }
+    
     updateData({ courts: updatedCourts, players: updatedPlayers });
   };
 
@@ -323,20 +342,16 @@ const App: React.FC = () => {
     let updatedPlayers = currentPlayers.map(p => finishingIds.has(p.id) ? { ...p, status: 'waiting' as const, playCount: (p.playCount || 0) + 1 } : p);
     
     const nextCourts = currentCourts.map(c => c.id === courtId ? { ...c, players: [null,null,null,null], status: 'empty' as const, startTime: undefined } : { ...c, players: [...c.players], nextMatch: [...c.nextMatch] }) as Court[];
-    
     const busyIds = new Set<string>();
     nextCourts.forEach(c => c.players.forEach(p => { if (p) busyIds.add(p.id) }));
-    
     const requests = nextCourts.flatMap(c => c.nextMatch.map((p, i) => p ? { p, cid: c.id, idx: i, qt: p.queueTime||0 } : null)).filter(Boolean).sort((a,b) => a!.qt - b!.qt);
     const modifiedCourtIds = new Set<number>(); 
-
     requests.forEach(req => {
         if (!req || busyIds.has(req.p.id)) return;
         const c = nextCourts.find(ct => ct.id === req.cid); 
         if (c && c.status === 'empty') { 
             c.players[req.idx] = req.p; c.nextMatch[req.idx] = null; 
-            busyIds.add(req.p.id); 
-            modifiedCourtIds.add(c.id); 
+            busyIds.add(req.p.id); modifiedCourtIds.add(c.id); 
         }
     });
 
@@ -358,52 +373,55 @@ const App: React.FC = () => {
   const allQueuedPlayers = courts.flatMap(c => c.nextMatch.filter(p => p !== null).map(p => ({ pid: p!.id, cid: c.id, queueTime: p!.queueTime || 0 })));
   allQueuedPlayers.sort((a, b) => a.queueTime - b.queueTime);
   const getPlayerQueueRank = (playerId: string, courtId: number): number => { const myEntries = allQueuedPlayers.filter(x => x.pid === playerId); const index = myEntries.findIndex(x => x.cid === courtId); return index + 1; };
-  const availablePlayersForModal = players.filter(p => { if (targetIsNextMatch) return true; const currentCourt = courts.find(c => c.id === targetCourtId); if (currentCourt) { if (targetIsNextMatch ? currentCourt.nextMatch.some(np => np?.id === p.id) : currentCourt.players.some(cp => cp?.id === p.id)) return false; } return p.status !== 'playing'; });
   
-  // 🔥🔥🔥 [核心修復] 戰績計算只認 Name，解決 ID 不一致導致無數據的問題 🔥🔥🔥
+  // 🔥 [修正 1] 顯示所有球員，不應該過濾掉已經在預排的人
+  const availablePlayersForModal = players.filter(p => {
+     const currentCourt = courts.find(c => c.id === targetCourtId);
+     
+     // 防呆：如果找不到場地，就顯示所有人
+     if (!currentCourt) return true;
+
+     // 1. 檢查重複：人不能同時存在於同一個區域 (避免重複排同一個隊伍)
+     if (targetIsNextMatch) {
+         // 如果是選預排：只要這個人不在「這塊預排區」裡面就可以
+         if (currentCourt.nextMatch.some(np => np?.id === p.id)) return false;
+     } else {
+         // 如果是選主場：只要這個人不在「這塊主場區」裡面就可以
+         if (currentCourt.players.some(cp => cp?.id === p.id)) return false;
+     }
+
+     // 2. 狀態過濾
+     if (targetIsNextMatch) {
+         // ✅ 關鍵修正：如果是預排，允許所有人 (包含正在打球 status === 'playing' 的人)
+         return true; 
+     } else {
+         // 如果是直接上場，才需要過濾掉正在打球的人
+         return p.status !== 'playing';
+     }
+  });
+
   const calculatePlayerStats = (player: Player) => { 
-      // 改為檢查 playerIds 存在與否，但不依賴它來找人
       const myHistory = history.filter(r => r.players && r.players.includes(player.name)); 
-      
       const totalGames = myHistory.length; 
       let wins = 0; 
       const partnerStats: Record<string, any> = {}; 
       const opponentStats: Record<string, any> = {}; 
       
       myHistory.forEach(match => { 
-          // 改用名字找 Index
           const myIndex = match.players.indexOf(player.name); 
           if (myIndex === -1) return; 
-          
           const isWin = match.winner === (myIndex < 2 ? 'Team A' : 'Team B'); 
           if (isWin) wins++; 
-          
           const partnerIdx = myIndex === 0 ? 1 : myIndex === 1 ? 0 : myIndex === 2 ? 3 : 2;
           const pName = match.players[partnerIdx];
-          if (pName) { 
-              if (!partnerStats[pName]) partnerStats[pName] = {name: pName, count: 0, wins: 0}; 
-              partnerStats[pName].count++; 
-              if(isWin) partnerStats[pName].wins++;
-          }
-          
+          if (pName) { if (!partnerStats[pName]) partnerStats[pName] = {name: pName, count: 0, wins: 0}; partnerStats[pName].count++; if(isWin) partnerStats[pName].wins++; }
           const oppIndices = myIndex < 2 ? [2, 3] : [0, 1];
           oppIndices.forEach(idx => {
              const oName = match.players[idx];
-             if (oName) { 
-                  if (!opponentStats[oName]) opponentStats[oName] = {name: oName, count: 0, wins: 0}; 
-                  opponentStats[oName].count++; 
-                  if (isWin) opponentStats[oName].wins++;
-             }
+             if (oName) { if (!opponentStats[oName]) opponentStats[oName] = {name: oName, count: 0, wins: 0}; opponentStats[oName].count++; if(isWin) opponentStats[oName].wins++; }
           });
       }); 
-      
-      return { 
-        totalGames, 
-        wins, 
-        winRate: totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0, 
-        partners: Object.values(partnerStats).sort((a: any, b: any) => b.count - a.count), 
-        opponents: Object.values(opponentStats).sort((a: any, b: any) => b.count - a.count) 
-      }; 
+      return { totalGames, wins, winRate: totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0, partners: Object.values(partnerStats).sort((a: any, b: any) => b.count - a.count), opponents: Object.values(opponentStats).sort((a: any, b: any) => b.count - a.count) }; 
   };
 
   return (
@@ -411,7 +429,7 @@ const App: React.FC = () => {
       {toastMessage && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[200] animate-fade-in-up"><div className="bg-emerald-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 border border-emerald-400/50"><CheckCircle size={18} />{toastMessage}</div></div>}
       <header className="bg-[#062c1f] border-b border-white/10 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2"><Trophy className="text-yellow-400" size={24} /><h1 className="text-xl font-bold tracking-wide flex items-center gap-2">野豬騎士<span className="text-emerald-500 text-sm font-normal bg-emerald-900/50 px-2 py-0.5 rounded hidden sm:inline-block">V8.9 Stats Fix</span></h1></div>
+          <div className="flex items-center gap-2"><Trophy className="text-yellow-400" size={24} /><h1 className="text-xl font-bold tracking-wide flex items-center gap-2">野豬騎士<span className="text-emerald-500 text-sm font-normal bg-emerald-900/50 px-2 py-0.5 rounded hidden sm:inline-block">V9.2 Logic Fix</span></h1></div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-black/20 border border-white/5 mr-2">{isSyncing ? <><div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div><span className="text-xs text-gray-400">連線中...</span></> : <><div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div><span className="text-xs text-emerald-400 font-bold">已同步</span></>}</div>
             <div className="flex items-center gap-1 bg-black/20 p-1 rounded-lg">
@@ -474,58 +492,28 @@ const App: React.FC = () => {
               </div>
             </div>
             
-            {/* 🔥🔥🔥 [核心修復] 暴力固定在最上層的歷史紀錄視窗 🔥🔥🔥 */}
+            {/* 🔥🔥 手機版對戰紀錄關閉鈕 (強制 fixed + z-index) 🔥🔥 */}
             <div className={`fixed inset-0 z-[10000] bg-[#031811] flex flex-col transition-transform duration-300 ${showHistoryMobile ? 'translate-y-0' : 'translate-y-full lg:translate-y-0 lg:static lg:w-80 lg:shrink-0 lg:block lg:bg-transparent'}`}>
-               <div className="flex lg:hidden justify-between items-center p-4 border-b border-white/10 bg-[#062c1f]">
+               <div className="flex lg:hidden justify-between items-center p-4 border-b border-white/10 bg-[#062c1f] relative">
                    <h2 className="text-xl font-bold flex items-center gap-2"><HistoryIcon/> 對戰紀錄</h2>
-                   {/* 這個按鈕現在是 fixed 定位，保證不會被蓋住 */}
                    <button 
                      onClick={() => setShowHistoryMobile(false)} 
-                     className="fixed top-3 right-3 p-2 bg-gray-700 hover:bg-gray-600 rounded-full text-white shadow-xl z-[10001] active:scale-95 border border-white/20"
+                     className="fixed top-4 right-4 p-3 bg-gray-700 hover:bg-gray-600 rounded-full text-white shadow-xl z-[10001] border border-white/20 active:scale-95"
                    >
                        <X size={28}/>
                    </button>
                </div>
-               <div className="flex-1 overflow-hidden p-4 lg:p-0 pt-16 lg:pt-0">
+               <div className="flex-1 overflow-hidden p-4 lg:p-0">
                   <HistoryPanel history={history} onClear={() => updateData({ history: [] })} />
                </div>
             </div>
           </div>
         )}
+        
+        {isPlayerSelectorOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-[#0a2e1f] w-full max-w-2xl rounded-2xl border border-emerald-500/50 shadow-2xl flex flex-col max-h-[80vh]"><div className="flex justify-between items-center p-5 border-b border-white/10 bg-[#062c1f] rounded-t-2xl"><div><h3 className="text-xl font-bold text-white">選擇上場球員</h3><p className="text-gray-400 text-xs mt-1">{targetIsNextMatch ? '加入預排區 (Next Match)' : `點擊球員以加入 ${targetCourtId} 號場地`}</p></div><button onClick={() => { setIsPlayerSelectorOpen(false); setTargetCourtId(null); }} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors"><X size={24} /></button></div><div className="p-6 overflow-y-auto custom-scrollbar bg-[#0a2e1f]"><PlayerList players={availablePlayersForModal} selectedPlayerId={null} onSelect={handleModalSelectPlayer} onRemove={() => {}} onChangeStatus={() => {}} readOnly={true} /></div></div></div>)}
 
-        {isPlayerSelectorOpen && (/* ... 省略，這部分沒問題 ... */ <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-[#0a2e1f] w-full max-w-2xl rounded-2xl border border-emerald-500/50 shadow-2xl flex flex-col max-h-[80vh]"><div className="flex justify-between items-center p-5 border-b border-white/10 bg-[#062c1f] rounded-t-2xl"><div><h3 className="text-xl font-bold text-white">選擇上場球員</h3><p className="text-gray-400 text-xs mt-1">{targetIsNextMatch ? '加入預排區 (Next Match)' : `點擊球員以加入 ${targetCourtId} 號場地`}</p></div><button onClick={() => { setIsPlayerSelectorOpen(false); setTargetCourtId(null); }} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors"><X size={24} /></button></div><div className="p-6 overflow-y-auto custom-scrollbar bg-[#0a2e1f]"><PlayerList players={availablePlayersForModal} selectedPlayerId={null} onSelect={handleModalSelectPlayer} onRemove={() => {}} onChangeStatus={() => {}} readOnly={true} /></div></div></div>)}
-
-        {editingPlayer && (/* ... 省略 ... */ <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-[#062c1f] w-full max-w-sm rounded-2xl border border-emerald-500/30 p-5 shadow-2xl"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-white text-lg">編輯 {editingPlayer.name}</h3><button onClick={() => setEditingPlayer(null)} className="text-gray-400 hover:text-white"><X size={20}/></button></div><div className="space-y-4"><div><label className="text-xs text-gray-400 mb-1 block">程度</label><select value={editingPlayer.level} onChange={(e) => setEditingPlayer({...editingPlayer, level: e.target.value as PlayerLevel})} className="w-full bg-[#031811] border border-white/20 rounded p-2 text-white outline-none focus:border-emerald-500">{Object.values(PlayerLevel).map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="grid grid-cols-2 gap-3"><div><label className="text-xs text-gray-400 mb-1 block">戰鬥力 (BP)</label><input type="number" value={editingPlayer.battlePower} onChange={(e) => setEditingPlayer({...editingPlayer, battlePower: parseInt(e.target.value)})} className="w-full bg-[#031811] border border-white/20 rounded p-2 text-white outline-none focus:border-emerald-500"/></div><div><label className="text-xs mb-1 block text-yellow-400">上場次數</label><input type="number" value={editingPlayer.playCount} onChange={(e) => setEditingPlayer({...editingPlayer, playCount: parseInt(e.target.value)})} className="w-full bg-[#031811] border border-white/20 rounded p-2 text-yellow-400 font-bold outline-none focus:border-yellow-500"/></div></div><div className="pt-2 flex gap-2"><button onClick={() => setEditingPlayer(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 py-2 rounded text-sm text-white">取消</button><button onClick={handleSavePlayerEdit} className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-sm text-white font-bold">儲存</button></div></div></div></div>)}
-
-        {viewingStatsPlayer && (
-           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-             <div className="bg-[#0a2e1f] w-full max-w-md rounded-2xl border border-purple-500/30 shadow-2xl flex flex-col max-h-[85vh]">
-                 <div className="p-5 border-b border-white/10 bg-[#062c1f] rounded-t-2xl flex justify-between items-center">
-                     <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${LEVEL_COLORS[viewingStatsPlayer.level] || 'bg-gray-500'} text-white border-2 border-white`}>{viewingStatsPlayer.name.slice(0, 2)}</div>
-                        <div><h3 className="text-xl font-bold text-white">{viewingStatsPlayer.name} 的戰績</h3><p className="text-xs text-purple-300">生涯詳細數據分析</p></div>
-                     </div>
-                     <button onClick={() => setViewingStatsPlayer(null)} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white"><X size={24}/></button>
-                 </div>
-                 <div className="p-5 overflow-y-auto custom-scrollbar space-y-6 bg-[#0a2e1f]">
-                    {(() => {
-                        const stats = calculatePlayerStats(viewingStatsPlayer);
-                        return (
-                           <>
-                             <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-black/20 p-3 rounded-xl text-center border border-white/5"><div className="text-xs text-gray-400 mb-1">總場次</div><div className="text-2xl font-bold text-white">{stats.totalGames}</div></div>
-                                <div className="bg-black/20 p-3 rounded-xl text-center border border-white/5"><div className="text-xs text-gray-400 mb-1">勝場</div><div className="text-2xl font-bold text-yellow-400">{stats.wins}</div></div>
-                                <div className="bg-black/20 p-3 rounded-xl text-center border border-white/5"><div className="text-xs text-gray-400 mb-1">勝率</div><div className="text-2xl font-bold text-emerald-400">{stats.winRate}%</div></div>
-                             </div>
-                             <div><h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2"><Shield size={14}/> 最佳搭檔</h4><div className="space-y-2">{stats.partners.length===0?<div className="text-center text-gray-500 text-xs py-2 flex items-center justify-center gap-1"><Frown size={16}/>無資料</div>:stats.partners.slice(0, 5).map((p: any) => <div key={p.name} className="flex justify-between items-center text-sm bg-blue-900/20 px-3 py-2 rounded-lg"><span className="font-bold text-gray-200">{p.name}</span><div className="flex gap-3 text-xs"><span className="text-gray-400">{p.count} 場</span><span className="text-yellow-500 font-mono">{Math.round((p.wins/p.count)*100)}%</span></div></div>)}</div></div>
-                             <div><h4 className="text-sm font-bold text-red-300 mb-3 flex items-center gap-2"><Swords size={14}/> 常遇對手</h4><div className="space-y-2">{stats.opponents.length===0?<div className="text-center text-gray-500 text-xs py-2 flex items-center justify-center gap-1"><Frown size={16}/>無資料</div>:stats.opponents.slice(0, 5).map((p: any) => <div key={p.name} className="flex justify-between items-center text-sm bg-red-900/20 px-3 py-2 rounded-lg"><span className="font-bold text-gray-200">{p.name}</span><div className="flex gap-3 text-xs"><span className="text-gray-400">{p.count} 場</span><span className="text-orange-400 font-mono">{Math.round((p.wins/p.count)*100)}%</span></div></div>)}</div></div>
-                           </>
-                        );
-                    })()}
-                 </div>
-             </div>
-           </div>
-        )}
+        {editingPlayer && (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-[#062c1f] w-full max-w-sm rounded-2xl border border-emerald-500/30 p-5 shadow-2xl"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-white text-lg">編輯 {editingPlayer.name}</h3><button onClick={() => setEditingPlayer(null)} className="text-gray-400 hover:text-white"><X size={20}/></button></div><div className="space-y-4"><div><label className="text-xs text-gray-400 mb-1 block">程度</label><select value={editingPlayer.level} onChange={(e) => setEditingPlayer({...editingPlayer, level: e.target.value as PlayerLevel})} className="w-full bg-[#031811] border border-white/20 rounded p-2 text-white outline-none focus:border-emerald-500">{Object.values(PlayerLevel).map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="grid grid-cols-2 gap-3"><div><label className="text-xs text-gray-400 mb-1 block">戰鬥力 (BP)</label><input type="number" value={editingPlayer.battlePower} onChange={(e) => setEditingPlayer({...editingPlayer, battlePower: parseInt(e.target.value)})} className="w-full bg-[#031811] border border-white/20 rounded p-2 text-white outline-none focus:border-emerald-500"/></div><div><label className="text-xs mb-1 block text-yellow-400">上場次數</label><input type="number" value={editingPlayer.playCount} onChange={(e) => setEditingPlayer({...editingPlayer, playCount: parseInt(e.target.value)})} className="w-full bg-[#031811] border border-white/20 rounded p-2 text-yellow-400 font-bold outline-none focus:border-yellow-500"/></div></div><div className="pt-2 flex gap-2"><button onClick={() => setEditingPlayer(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 py-2 rounded text-sm text-white">取消</button><button onClick={handleSavePlayerEdit} className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-sm text-white font-bold">儲存</button></div></div></div></div>)}
+        {viewingStatsPlayer && (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-[#0a2e1f] w-full max-w-md rounded-2xl border border-purple-500/30 shadow-2xl flex flex-col max-h-[85vh]"><div className="p-5 border-b border-white/10 bg-[#062c1f] rounded-t-2xl flex justify-between items-center"><div className="flex items-center gap-3"><div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${LEVEL_COLORS[viewingStatsPlayer.level] || 'bg-gray-500'} text-white border-2 border-white`}>{viewingStatsPlayer.name.slice(0, 2)}</div><div><h3 className="text-xl font-bold text-white">{viewingStatsPlayer.name} 的戰績</h3><p className="text-xs text-purple-300">生涯詳細數據分析</p></div></div><button onClick={() => setViewingStatsPlayer(null)} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white"><X size={24}/></button></div><div className="p-5 overflow-y-auto custom-scrollbar space-y-6 bg-[#0a2e1f]">{(() => { const stats = calculatePlayerStats(viewingStatsPlayer); return (<><div className="grid grid-cols-3 gap-3"><div className="bg-black/20 p-3 rounded-xl text-center border border-white/5"><div className="text-xs text-gray-400 mb-1">總場次</div><div className="text-2xl font-bold text-white">{stats.totalGames}</div></div><div className="bg-black/20 p-3 rounded-xl text-center border border-white/5"><div className="text-xs text-gray-400 mb-1">勝場</div><div className="text-2xl font-bold text-yellow-400">{stats.wins}</div></div><div className="bg-black/20 p-3 rounded-xl text-center border border-white/5"><div className="text-xs text-gray-400 mb-1">勝率</div><div className="text-2xl font-bold text-emerald-400">{stats.winRate}%</div></div></div><div><h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2"><Shield size={14}/> 最佳搭檔</h4><div className="space-y-2">{stats.partners.length===0?<div className="text-center text-gray-500 text-xs py-2 flex items-center justify-center gap-1"><Frown size={16}/>無資料</div>:stats.partners.slice(0, 5).map((p: any) => <div key={p.name} className="flex justify-between items-center text-sm bg-blue-900/20 px-3 py-2 rounded-lg"><span className="font-bold text-gray-200">{p.name}</span><div className="flex gap-3 text-xs"><span className="text-gray-400">{p.count} 場</span><span className="text-yellow-500 font-mono">{Math.round((p.wins/p.count)*100)}%</span></div></div>)}</div></div><div><h4 className="text-sm font-bold text-red-300 mb-3 flex items-center gap-2"><Swords size={14}/> 常遇對手</h4><div className="space-y-2">{stats.opponents.length===0?<div className="text-center text-gray-500 text-xs py-2 flex items-center justify-center gap-1"><Frown size={16}/>無資料</div>:stats.opponents.slice(0, 5).map((p: any) => <div key={p.name} className="flex justify-between items-center text-sm bg-red-900/20 px-3 py-2 rounded-lg"><span className="font-bold text-gray-200">{p.name}</span><div className="flex gap-3 text-xs"><span className="text-gray-400">{p.count} 場</span><span className="text-orange-400 font-mono">{Math.round((p.wins/p.count)*100)}%</span></div></div>)}</div></div></>);})()}</div></div></div>)}
       </main>
     </div>
   );

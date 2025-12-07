@@ -23,26 +23,18 @@ const PlayerList: React.FC<Props> = ({ players, onRemove, onChangeStatus, onSele
     return () => window.removeEventListener('click', handleClickOutside);
   }, [activeMenuId]);
 
-  // 各區分類
   const fixedPlayers = players.filter(p => p.status === 'fixed').sort((a, b) => b.battlePower - a.battlePower);
   const waitingPlayers = players.filter(p => p.status === 'waiting');
   const restingPlayers = players.filter(p => p.status === 'resting').sort((a, b) => b.battlePower - a.battlePower);
   const playingPlayers = players.filter(p => p.status === 'playing').sort((a, b) => b.battlePower - a.battlePower);
-
-  // ⚠️ 關鍵：找出不屬於目前任何中文等級的「舊資料/幽靈人口」
-  // 只要它的等級字串，不存在於我們定義的 LEVEL_ORDER (職業、高階...) 中，就抓出來
+  
   const unknownPlayers = waitingPlayers.filter(p => !LEVEL_ORDER.includes(p.level as any));
 
   const renderPlayerCard = (player: Player, isUnknown = false) => {
     const isSelected = selectedPlayerId === player.id;
     const isMenuOpen = activeMenuId === player.id;
-    // 如果是舊資料，style 可能會是 undefined，給個預設灰色
     const style = LEVEL_STYLES[player.level as any] || { 
-        name: isUnknown ? '格式舊' : '未知', 
-        color: 'text-gray-400', 
-        bg: 'bg-gray-800', 
-        border: 'border-gray-500', 
-        badge: 'bg-gray-600' 
+        name: isUnknown ? '格式舊' : '未知', color: 'text-gray-400', bg: 'bg-gray-800', border: 'border-gray-500', badge: 'bg-gray-600' 
     };
     
     return (
@@ -65,9 +57,9 @@ const PlayerList: React.FC<Props> = ({ players, onRemove, onChangeStatus, onSele
             )}
         </div>
         
-        {/* 大頭文字 (首字) */}
+        {/* 🔥 修正：背景大字也統一顯示名字首字 */}
         <div className="absolute right-1 bottom-1 opacity-20 text-[50px] font-black leading-none pointer-events-none select-none text-white mix-blend-overlay">
-            {player.name ? player.name.slice(0, 1) : '?'}
+            {player.name.slice(0, 1)}
         </div>
 
         <div className="flex items-center gap-1 mt-auto z-10">
@@ -125,20 +117,18 @@ const PlayerList: React.FC<Props> = ({ players, onRemove, onChangeStatus, onSele
            ) : (
              <>
                {LEVEL_ORDER.map(level => {
-                 // 過濾出符合當前「中文等級」的人
                  const levelPlayers = waitingPlayers.filter(p => p.level === level).sort((a, b) => b.battlePower - a.battlePower);
                  if (levelPlayers.length === 0) return null;
-                 
                  const style = LEVEL_STYLES[level];
                  return (
                    <div key={level} className="relative">
-                      <div className={`flex items-center gap-2 mb-2 pb-1 border-b ${style.border} border-dashed border-opacity-30`}><span className={`text-[10px] font-bold text-black px-2 py-0.5 rounded ${style.badge}`}>{style.name}</span><span className="text-[10px] text-gray-500">{levelPlayers.length} 人</span></div>
+                      <div className={`flex items-center gap-2 mb-2 pb-1 border-b ${style?.border || 'border-gray-700'} border-dashed border-opacity-30`}><span className={`text-[10px] font-bold text-black px-2 py-0.5 rounded ${style?.badge || 'bg-gray-600'}`}>{style?.name || level}</span><span className="text-[10px] text-gray-500">{levelPlayers.length} 人</span></div>
                       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">{levelPlayers.map(p => renderPlayerCard(p))}</div>
                    </div>
                  );
                })}
 
-               {/* 👇👇👇 重點：舊資料（隱形人）救援區 👇👇👇 */}
+               {/* 舊資料修復區 */}
                {unknownPlayers.length > 0 && (
                    <div className="relative mt-6 border-t-2 border-dashed border-gray-600 pt-4 animate-pulse bg-red-900/20 rounded p-2">
                       <div className="flex items-center gap-2 mb-2 pb-1 text-red-300 font-bold text-sm">

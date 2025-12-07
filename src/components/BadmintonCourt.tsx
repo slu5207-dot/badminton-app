@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { LEVEL_COLORS } from '../constants';
-import type { Court } from '../types'; // 修正重點：只保留 Court，移除 Player
+import type { Court } from '../types';
 import { Timer, UserPlus, XCircle, Trophy, Swords, Play, CheckCircle, ArrowDown } from 'lucide-react';
 
 interface Props {
@@ -35,7 +35,6 @@ const BadmintonCourt: React.FC<Props> = ({ court, onFinish, onStart, onRemovePla
     return () => clearInterval(interval);
   }, [court.status, court.startTime]);
 
-  // 直接讀取，不用宣告變數
   const sumA = (court.players[0]?.battlePower || 0) + (court.players[1]?.battlePower || 0);
   const sumB = (court.players[2]?.battlePower || 0) + (court.players[3]?.battlePower || 0);
   const diff = Math.abs(sumA - sumB);
@@ -59,7 +58,8 @@ const BadmintonCourt: React.FC<Props> = ({ court, onFinish, onStart, onRemovePla
             {player ? (
                 <div className="flex items-center gap-2 w-full px-2">
                     <div className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm border border-white/30 ${LEVEL_COLORS[player.level]}`}>
-                        {player.level === '職業' ? '職' : player.name.slice(0, 1)}
+                        {/* 🔥 修正：統一顯示名字首字 */}
+                        {player.name.slice(0, 1)}
                     </div>
                     <span className="text-xs text-white truncate font-medium flex-1">{player.name}</span>
                     <button onClick={(e) => {e.stopPropagation(); onRemovePlayer(court.id, index, true)}} className="shrink-0 bg-red-500 rounded-full p-0.5 shadow hover:scale-110 z-20">
@@ -91,7 +91,8 @@ const BadmintonCourt: React.FC<Props> = ({ court, onFinish, onStart, onRemovePla
       return (
           <div className="flex flex-col items-center gap-1 relative z-20 animate-fade-in group cursor-default">
               <div className={`w-14 h-14 rounded-full flex items-center justify-center text-base font-bold text-white shadow-lg border-2 border-white ring-4 ring-black/20 ${LEVEL_COLORS[player.level] || 'bg-gray-500'}`}>
-                  {player.level === '職業' ? '職' : player.name.slice(0, 2)}
+                  {/* 🔥 修正：統一顯示名字首字 */}
+                  {player.name.slice(0, 1)}
               </div>
               <div className="bg-black/70 backdrop-blur-md text-white text-xs px-2 py-0.5 rounded-full font-bold shadow-md border border-white/10 max-w-[80px] truncate">
                   {player.name}
