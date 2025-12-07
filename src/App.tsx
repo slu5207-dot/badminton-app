@@ -413,15 +413,19 @@ const App: React.FC = () => {
               </div>
             </div>
             {/* 修改 1: 這是新的「對戰紀錄」全螢幕蓋板，上方增加了大大的關閉列 */}
-            <div className={`fixed inset-0 z-[60] bg-[#031811] flex flex-col transition-transform duration-300 ${showHistoryMobile ? 'translate-y-0' : 'translate-y-full lg:translate-y-0 lg:static lg:w-80 lg:shrink-0 lg:block lg:bg-transparent'}`}>
-               <div className="flex lg:hidden justify-between items-center p-4 border-b border-white/10 bg-[#062c1f]">
-                   <h2 className="text-xl font-bold flex items-center gap-2"><HistoryIcon/> 對戰紀錄</h2>
-                   <button onClick={() => setShowHistoryMobile(false)} className="p-2 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors text-white shadow-lg"><X size={24}/></button>
-               </div>
-               <div className="flex-1 overflow-hidden p-4 lg:p-0">
-                  <HistoryPanel history={history} onClear={() => updateData({ history: [] })} />
-               </div>
-            </div>
+<div className={`fixed inset-0 z-[200] bg-[#031811] flex flex-col transition-transform duration-300 ${showHistoryMobile ? 'translate-y-0' : 'translate-y-full lg:translate-y-0 lg:static lg:w-80 lg:shrink-0 lg:block lg:bg-transparent'}`}>
+   <div className="flex lg:hidden justify-between items-center p-4 border-b border-white/10 bg-[#062c1f]">
+       <h2 className="text-xl font-bold flex items-center gap-2"><HistoryIcon/> 對戰紀錄</h2>
+       {/* 這裡確保按鈕夠大、夠好按 */}
+       <button onClick={() => setShowHistoryMobile(false)} className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full text-white shadow-lg z-50">
+           <X size={28}/>
+       </button>
+   </div>
+   <div className="flex-1 overflow-hidden p-4 lg:p-0 relative">
+      {/* 歷史紀錄本體 */}
+      <HistoryPanel history={history} onClear={() => updateData({ history: [] })} />
+   </div>
+</div>
           </div>
         )}
         
